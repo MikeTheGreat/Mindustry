@@ -46,107 +46,6 @@ import java.util.Arrays;
 
 public class MindustrySerializer {
 
-//    // Tried XStream:
-//    public static void serializeBlocks(String filename, Block[] blocksToSerialize) {
-//        // "self-contained" JSON driver:
-//        XStream xstream = new XStream(new JsonHierarchicalStreamDriver());
-//        // XStream xstream = new XStream(new JettisonMappedXmlDriver());
-//        xstream.setMode(XStream.NO_REFERENCES);
-//        System.out.println(xstream.toXML(blocksToSerialize[0]));
-//    }
-
-
-    // Attempt using Jackson:
-    public static void serializeTechTree(String fileName) {
-        String jsonString = "DID NOT SERIALIZE ROOT :(";
-//        Gson gson = new Gson();
-//        String jsonString = gson.toJson(root);
-//
-
-        // Jackson library:
-
-        // from https://www.tutorialspoint.com/how-to-implement-a-custom-serializer-using-the-jackson-library-in-java
-        class TechNodeSerializer extends StdSerializer<TechTree.TechNode> {
-            public TechNodeSerializer() {
-                this(null);
-            }
-
-            public TechNodeSerializer(Class<TechTree.TechNode> t) {
-                super(t);
-            }
-
-            @Override
-            public void serialize(TechTree.TechNode value, JsonGenerator jgen, SerializerProvider provider)
-                    throws IOException, JsonProcessingException {
-
-                // Filter out stuff we don't want to print:
-                if (value.content.getContentType() != ContentType.block) return;
-
-                jgen.writeStartObject();
-                jgen.writeStringField("name", value.content.localizedName);
-//                jgen.writeStringField("type", value.content.getContentType().toString());
-//                if( value.parent == null) {
-//                    jgen.writeStringField("parent", null);
-//                } else {
-//                    jgen.writeStringField("parent", value.parent.content.localizedName);
-//                }
-                //provider.defaultSerializeField("parent", value.parent, jgen);
-
-                jgen.writeArrayFieldStart("children");
-
-                for (TechTree.TechNode child : value.children) {
-                    // jgen.writeString(child.content.localizedName);
-                    this.serialize(child, jgen, provider);
-                }
-                jgen.writeEndArray();
-
-                jgen.writeEndObject();
-            }
-        }
-
-//        // From https://github.com/FasterXML/jackson-docs/wiki/JacksonMixInAnnotations
-//        abstract class MixInBlock {
-//            // https://github.com/FasterXML/jackson-annotations
-//            @JsonIgnore public Consumers consumes; // we don't need it!
-//        }
-//        abstract class MixInTechTree {
-//            // https://github.com/FasterXML/jackson-annotations
-//            @JsonIgnore public UnlockableContent content;
-//        }
-//        mapper.addMixInAnnotations(Block.class, MixInBlock.class);
-//        mapper.addMixInAnnotations(TechTree.class, MixInTechTree.class);
-
-
-        try {
-            ObjectMapper mapper = new ObjectMapper();
-
-//            SimpleModule module = new SimpleModule();
-//            module.addSerializer(Item.class, new TechNodeSerializer());
-//            mapper.registerModule(module);
-
-            mapper.setSerializationInclusion(JsonInclude.Include.NON_EMPTY);
-
-            SimpleModule module = new SimpleModule();
-            module.addSerializer(TechTree.TechNode.class, new TechNodeSerializer());
-            mapper.registerModule(module);
-
-            // Next line avoids this error:
-            // No serializer found for class mindustry.world.meta.BlockBars and no properties discovered to create BeanSerializer (to avoid exception, disable SerializationFeature.FAIL_ON_EMPTY_BEANS) (through reference chain: mindustry.content.TechTree$TechNode["content"]->mindustry.content.Blocks$154["bars"])
-            mapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
-            mapper.configure(SerializationFeature.INDENT_OUTPUT, true);
-
-            // jsonString = mapper.writeValueAsString(root);
-            mapper.writeValue(new File("c:\\MikesStuff\\MindustryInfo.json"), TechTree.root);
-        } catch (Exception exc) {
-            System.out.println(exc.getMessage());
-        }
-
-        System.out.println("Hello!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-        // System.out.println(jsonString);
-        System.out.println("Hello!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
-    }
-
-
     public static void serializeBlocks(String filename, Block[] blocksToSerialize) {
         try {
             ObjectMapper mapper = new ObjectMapper();
@@ -154,13 +53,8 @@ public class MindustrySerializer {
             mapper.setSerializationInclusion(JsonInclude.Include.NON_EMPTY);
             mapper.configure(SerializationFeature.FAIL_ON_EMPTY_BEANS, false);
             mapper.configure(SerializationFeature.INDENT_OUTPUT, true);
-
             // IGNORE null values by only including non-null values:
             mapper.setSerializationInclusion(JsonInclude.Include.NON_NULL);
-
-//            SimpleModule module = new SimpleModule();
-//            module.addSerializer(Block.class, new BlockSerializer());
-//            mapper.registerModule(module);
 
             SimpleModule skipTextures = new SimpleModule();
             skipTextures.addSerializer(TextureData.class, new NoopSerializer());
@@ -168,32 +62,18 @@ public class MindustrySerializer {
             mapper.registerModule(skipTextures);
 
             SimpleModule module = new SimpleModule();
-            // module.addSerializer(Object.class, new SkipExceptionsSerializer(mapper.getSerializerProvider()));
             module.setSerializerModifier(new SkipExceptionsSerializerModifier());
             mapper.registerModule(module);
 
-            // jsonString = mapper.writeValueAsString(root);
-
-            // print out blocks, one at a time:
-//            for(int i = 0; i < blocksToSerialize.length; i++) {
-//                try {
-//                    mapper.writeValue(new File(filename), blocksToSerialize[i]);
-//                }
-//                catch( Exception e) {
-//                    System.out.println(e.getMessage());
-//                    System.out.println("Error!");
-//
-//                }
-//
-//            }
-
             mapper.writeValue(new File(filename), blocksToSerialize);
+
             System.out.println("Printed blocks to " + filename);
         } catch (Exception exc) {
             System.out.println(exc.getMessage());
         }
     }
 
+    // We use this to skip serializing the textures (images).
     public static class NoopSerializerModifier extends BeanSerializerModifier {
         @Override
         public JsonSerializer<?> modifySerializer(
@@ -205,6 +85,7 @@ public class MindustrySerializer {
             return serializer;
         }
     }
+
     // https://www.baeldung.com/jackson-call-default-serializer-from-custom-serializer
     static class NoopSerializer extends StdSerializer<Object> {
 
@@ -220,8 +101,8 @@ public class MindustrySerializer {
         public void serialize(Object value, JsonGenerator jgen, SerializerProvider provider)
                 throws IOException, JsonProcessingException {
             System.out.println("No-op serializer for " + value.getClass().getName());
-            //jgen.writeNullField(value.getClass().getName());
-            jgen.writeString("MISSING");
+            jgen.writeString("MISSING"); // instead of writing out the image as the value
+            // put in a string
             jgen.flush();
             System.out.println();
         }
@@ -232,12 +113,8 @@ public class MindustrySerializer {
         @Override
         public JsonSerializer<?> modifySerializer(
                 SerializationConfig config, BeanDescription beanDesc, JsonSerializer<?> serializer) {
-
-            //if (beanDesc.getBeanClass().equals(Object.class)) {
+            // Use this serializer for everything that we can:
             return new SkipExceptionsSerializer((JsonSerializer<Object>) serializer);
-            //}
-
-            // return serializer;
         }
     }
 
@@ -250,9 +127,6 @@ public class MindustrySerializer {
             this(null);
         }
 
-        //        public SkipExceptionsSerializer(Class<Object> t) {
-//            super(t);
-//        }
         public SkipExceptionsSerializer(JsonSerializer<Object> defaultSerializer) {
             super(Object.class);
             this.defaultSerializer = defaultSerializer;
@@ -262,8 +136,6 @@ public class MindustrySerializer {
         public void serialize(Object value, JsonGenerator jgen, SerializerProvider provider)
                 throws IOException, JsonProcessingException {
             try {
-                // placeholder for problematic objects
-
                 if (value instanceof Block) {
                     try {
                         Block b = (Block) value;
@@ -277,41 +149,14 @@ public class MindustrySerializer {
                     }
                 }
 
-                // These all choke on
-                // Cannot invoke "arc.graphics.g2d.TextureRegion.found()" because "this.teamRegion" is null (through reference chain: mindustry.content.Blocks$190["generatedIcons"])
-                // Issue seems to be with getGeneratedIcons
-                if (value instanceof Separator
-                        || value instanceof Incinerator
-                        || value instanceof PowerSource
-                        || value instanceof PowerVoid
-                        || value instanceof ItemSource
-                        || value instanceof ItemVoid
-                        || value instanceof LiquidSource
-                        || value instanceof LiquidVoid // didn't actually check if LiquidVoid has the problem too, just put it in because it matches the pattern
-                        || value instanceof LightBlock
-                        || value instanceof MendProjector
-                        || value instanceof OverdriveProjector
-                        || value instanceof ForceProjector
-                        || value instanceof ShockMine
-                        || value instanceof Conveyor
-                ) {
-                    serializeX(value, jgen, provider);
-                } else if (value instanceof Consumers) {
-                    if(value instanceof ConsumeItemFilter) {
-                        // ConsumeItemFilter cause a problem
-                        jgen.writeString("Skipping - ConsumeItemFilter cause a problem");
-                        return;
-                    }
-                    Consumers c;
+                if (value instanceof Consumers) {
                     try {
-                        c = (Consumers) value;
-                        serializeConsumers(c, jgen, provider);
+                        serializeConsumers((Consumers) value, jgen, provider);
                     } catch (Exception e) {
                         System.out.println("serializeConsumers: Skipping object b/c of exception.\n\t" + value.toString() + "\n\t" + e.getMessage());
-                        //jgen.writeStringField(value.getClass().getName(), "MISSING");
-                        jgen.writeEndObject(); // what about ending the problematic object?
-                        jgen.flush();
                         System.out.println();
+                        jgen.writeEndObject(); // end the problematic object (instead of writing out values, etc)
+                        jgen.flush();
                     }
                 } else if (defaultSerializer != null) {
                     // provider.defaultSerializeValue(value, jgen);
@@ -321,9 +166,7 @@ public class MindustrySerializer {
                 System.out.println("Skipping object b/c of exception.\n\t" + value.toString() + "\n\t" + e.getMessage());
                 System.out.println();
                 // Wanted to write to file, but frequently the problem is that the file has been mangled/corrupted
-                //jgen.writeStartObject();
                 //jgen.writeStringField("EXCEPTION_FROM", value.toString());
-                //jgen.writeEndObject();
             }
         }
 
@@ -337,19 +180,19 @@ public class MindustrySerializer {
             jgen.writeStartObject();
 
             jgen.writeStringField("NOTE", "Custom Serializer Created This");
-            if( ! value.has(ConsumeType.item))
+            if (!value.has(ConsumeType.item))
                 jgen.writeStringField("item", "None");
             else {
                 jgen.writeObjectField("item", value.getItem());
                 jgen.writeObjectField("itemfilters", value.itemFilters);
             }
 
-            if( ! value.has(ConsumeType.power))
+            if (!value.has(ConsumeType.power))
                 jgen.writeStringField("power", "None");
             else
                 jgen.writeObjectField("power", value.getPower());
 
-            if( ! value.has(ConsumeType.liquid))
+            if (!value.has(ConsumeType.liquid))
                 jgen.writeStringField("liquid", "None");
             else
                 // No getLiquid() method
@@ -364,66 +207,53 @@ public class MindustrySerializer {
 
             Class aClass = value.getClass();
             jgen.writeStringField("NOTE", aClass.getName() + ": Placeholder Serializer Created This to avoid an exception");
-            // printGettersSetters(value.getClass());
 
-            System.out.println("========= "+aClass.getName() + ": =========");
+            System.out.println("========= " + aClass.getName() + ": =========");
 
-            System.out.println("METHODS: ===========");
-
-            Method[] methods = aClass.getMethods();
-            for(Method method : methods) {
-                try {
-                    if( method.getName() == "getGeneratedIcons") {
-                        System.out.println("\tSKIPPING METHOD: "+ method.getName());
-                        continue;
-                    }
-                    else if (defaultSerializer != null) {
-                        // provider.defaultSerializeValue(value, jgen);
-                        System.out.println("\tMethod: "+method.getName());
-//                        jgen.writeFieldName(f.getName());
-//                        fieldStarted = true;
-                        jgen.flush();
-                        //defaultSerializer.serialize(f.get(value), jgen, provider);
-                        jgen.flush();
-                    }
-                } catch ( Exception e) {
-                    JsonStreamContext ctx = jgen.getOutputContext();
-//                    if( fieldStarted) {
-//                        jgen.writeNull();
-//                        //jgen.writeString("EXCEPTION WHEN SERIALIZED");
+//            System.out.println("METHODS: ===========");
+//
+//            Method[] methods = aClass.getMethods();
+//            for (Method method : methods) {
+//                try {
+//                    if (method.getName() == "getGeneratedIcons") {
+//                        System.out.println("\tSKIPPING METHOD: " + method.getName());
+//                        continue;
+//                    } else if (defaultSerializer != null) {
+//                        // provider.defaultSerializeValue(value, jgen);
+//                        System.out.println("\tMethod: " + method.getName());
+////                        jgen.writeFieldName(f.getName());
+////                        fieldStarted = true;
+//                        jgen.flush();
+//                        //defaultSerializer.serialize(f.get(value), jgen, provider);
+//                        jgen.flush();
 //                    }
-                    System.out.println("Failed to get value for method " + method.getName() +":\n"+e.getMessage());
-                    jgen.writeNullField(method.getName());
-                    jgen.flush();
-                }
-            }
+//                } catch (Exception e) {
+//                    JsonStreamContext ctx = jgen.getOutputContext();
+////                    if( fieldStarted) {
+////                        jgen.writeNull();
+////                        //jgen.writeString("EXCEPTION WHEN SERIALIZED");
+////                    }
+//                    System.out.println("Failed to get value for method " + method.getName() + ":\n" + e.getMessage());
+//                    jgen.writeNullField(method.getName());
+//                    jgen.flush();
+//                }
+//            }
 
             System.out.println("FIELDS: ===========");
             Field[] fields = aClass.getFields();
-            for( Field f : fields) {
+            for (Field f : fields) {
                 boolean fieldStarted = false;
                 try {
-                    if(     f.getName() == "textureData"
+                    if (f.getName() == "textureData"
                             || f.getType().getName() == "arc.graphics.g2d.TextureRegion") {
-                        System.out.println("\tSKIPPING "+f.getName() + "("+ f.getType().getName() +"): " + f.get(value));
-                        continue;
-                    }
-                    else if (defaultSerializer != null) {
-                        // provider.defaultSerializeValue(value, jgen);
-                        System.out.println("\tname: "+f.getName() + " type: "+ f.getType().getName() +" value:" + f.get(value));
-//                        jgen.writeFieldName(f.getName());
+                        System.out.println("\tSKIPPING " + f.getName() + "(" + f.getType().getName() + "): " + f.get(value));
+                    } else if (defaultSerializer != null) {
+                        System.out.println("\tname: " + f.getName() + " type: " + f.getType().getName() + " value:" + f.get(value));
                         jgen.writeObjectField(f.getName(), f.get(value));
-//                        fieldStarted = true;
-//                        jgen.flush();
-//                        defaultSerializer.serialize(f.get(value), jgen, provider);
                         jgen.flush();
                     }
-                } catch ( Exception e) {
-                    JsonStreamContext ctx = jgen.getOutputContext();
-//                    if( fieldStarted) {
-//                        jgen.writeNull();
-//                    }
-                    System.out.println("Failed to get value for " + f.getName() +":\n"+e.getMessage());
+                } catch (Exception e) {
+                    System.out.println("Failed to get value for " + f.getName() + ":\n" + e.getMessage());
                     jgen.writeNullField(f.getName());
                     jgen.flush();
                 }
@@ -432,91 +262,21 @@ public class MindustrySerializer {
             jgen.writeEndObject();
         }
 
-        public void serializeTemplate(Separator value, JsonGenerator jgen, SerializerProvider provider)
-                throws IOException, JsonProcessingException {
-            jgen.writeStartObject();
-
-            jgen.writeStringField("NOTE", "Custom Serializer Created This");
-
-            jgen.writeEndObject();
-        }
-
         // from http://tutorials.jenkov.com/java-reflection/getters-setters.html:
-        public static void printGettersSetters(Class aClass){
-            Method[] methods = aClass.getMethods();
-
-            System.out.println("METHODS: ===========");
-
-            for(Method method : methods){
-                if(isGetter(method)) System.out.println("\tgetter: " + method);
-                if(isSetter(method)) System.out.println("\tsetter: " + method);
-            }
-        }
-
-        public static boolean isGetter(Method method){
-            if(!method.getName().startsWith("get"))      return false;
-            if(method.getParameterTypes().length != 0)   return false;
-            if(void.class.equals(method.getReturnType())) return false;
+        public static boolean isGetter(Method method) {
+            if (!method.getName().startsWith("get")) return false;
+            if (method.getParameterTypes().length != 0) return false;
+            if (void.class.equals(method.getReturnType())) return false;
             return true;
         }
 
-        public static boolean isSetter(Method method){
-            if(!method.getName().startsWith("set")) return false;
-            if(method.getParameterTypes().length != 1) return false;
+        public static boolean isSetter(Method method) {
+            if (!method.getName().startsWith("set")) return false;
+            if (method.getParameterTypes().length != 1) return false;
             return true;
         }
     }
-
-
-    static class BlockSerializer extends StdSerializer<Block> {
-        public BlockSerializer() {
-            this(null);
-        }
-
-        public BlockSerializer(Class<Block> t) {
-            super(t);
-        }
-
-        @Override
-        public void serialize(Block value, JsonGenerator jgen, SerializerProvider provider)
-                throws IOException, JsonProcessingException {
-            jgen.writeStartObject();
-
-            jgen.writeStringField("name", value.localizedName);
-            jgen.writeNumberField("id", value.id);
-//            jgen.writeArrayFieldStart("consumes");
-//            for(Consume i : value.consumes.all()) {
-//                i.
-//            }
-//            jgen.writeEndArray();
-
-            jgen.writeEndObject();
-        }
-    }
-
-    static class ItemSerializer extends StdSerializer<Item> {
-        public ItemSerializer() {
-            this(null);
-        }
-
-        public ItemSerializer(Class<Item> t) {
-            super(t);
-        }
-
-        @Override
-        public void serialize(Item value, JsonGenerator jgen, SerializerProvider provider)
-                throws IOException, JsonProcessingException {
-            jgen.writeStartObject();
-
-            jgen.writeStringField("name", value.localizedName);
-            jgen.writeNumberField("id", value.id);
-
-
-            jgen.writeEndObject();
-        }
-    }
-
-
+}
     // Example of a block (silicon smelter):
     /*
     {
@@ -884,5 +644,4 @@ public class MindustrySerializer {
   "disposed" : false
 }
 */
-}
 
