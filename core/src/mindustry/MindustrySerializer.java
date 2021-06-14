@@ -92,16 +92,13 @@ public class MindustrySerializer {
         }
     }
 
-    static class GlobalVars {
-        public static int recursion_level = 0;
-    }
-
     // https://www.baeldung.com/jackson-call-default-serializer-from-custom-serializer
     static class SkipExceptionsSerializer extends StdSerializer<Object> {
 
         private JsonSerializer<Object> defaultSerializer;
 
-        private HashMap<Object, Boolean> serializedObjects = new HashMap<>(2000);
+        public static int serialized_object_id = 0;
+        private HashMap<Object, Integer> serializedObjects = new HashMap<>(2000);
 
         public SkipExceptionsSerializer(JsonSerializer<Object> defaultSerializer) {
             super(Object.class);
@@ -135,13 +132,7 @@ public class MindustrySerializer {
                         jgen.flush();
                     }
                 } else if (defaultSerializer != null) {
-                    GlobalVars.recursion_level++;
-                    if (GlobalVars.recursion_level > 10)
-                        return;
-
                     defaultSerializer.serialize(value, jgen, provider);
-
-                    GlobalVars.recursion_level--;
                 }
             } catch (Exception e) {
                 System.out.println("Skipping object b/c of exception.\n\t" + value.toString() + "\n\t" + e.getMessage());
@@ -188,16 +179,19 @@ public class MindustrySerializer {
 
             // Don't serialize the same object multiple times:
             if(serializedObjects.containsKey(value)  ) {
-                jgen.writeStringField(value.toString(), "Duplicate object - already serialized this somewhere else");
+                jgen.writeStringField("NOTE", " Duplicate object - already serialized this somewhere else (use serializer_object_id to get details)");
+                jgen.writeStringField(value.toString(), "serializer_object_id="+serializedObjects.get(value));
                 jgen.writeEndObject();
                 jgen.flush();
                 return;
             }
-            serializedObjects.put(value, true);
+           serializedObjects.put(value, serialized_object_id++);
 
             Class aClass = value.getClass();
             jgen.writeStringField("NOTE", aClass.getName() + ": Manual Serializer Invoked to avoid an exception");
-
+            int currentObjectsId = serializedObjects.get(value);
+            jgen.writeNumberField("serializer_object_id", currentObjectsId);
+            jgen.flush();
             System.out.println("========= " + aClass.getName() + ": =========");
 
 //            System.out.println("METHODS: ===========");

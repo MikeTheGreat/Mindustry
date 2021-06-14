@@ -107,9 +107,9 @@ public class SerializeMindustryInfo_As_Tests {
         for (Object o : objArray) {
             Block b = (Block) o;
 
-            if( b.name.equals("air")
-                || b.name.equals("spawn"))
-                theBlocks[i++] = b;
+//            if( b.name.equals("air")
+//                || b.name.equals("spawn"))
+            theBlocks[i++] = b;
         }
 
         MindustrySerializer.serializeBlocks("c:\\MikesStuff\\MindustryInfo.json", theBlocks);
