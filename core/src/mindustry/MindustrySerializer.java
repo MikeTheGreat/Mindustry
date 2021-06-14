@@ -19,7 +19,12 @@ import mindustry.world.consumers.Consumers;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Set;
 
 @SuppressWarnings("ALL")
 public class MindustrySerializer {
@@ -74,11 +79,11 @@ public class MindustrySerializer {
         @Override
         public void serialize(Object value, JsonGenerator jgen, SerializerProvider provider)
                 throws IOException {
-            System.out.println("No-op serializer for " + value.getClass().getName());
+            //System.out.println("No-op serializer for " + value.getClass().getName());
             jgen.writeString("MISSING"); // instead of writing out the image as the value
             // put in a string
             jgen.flush();
-            System.out.println();
+            //System.out.println();
         }
     }
 
@@ -98,42 +103,156 @@ public class MindustrySerializer {
         private JsonSerializer<Object> defaultSerializer;
 
         public static int serialized_object_id = 0;
-        private HashMap<Object, Integer> serializedObjects = new HashMap<>(2000);
+        private static HashMap<Object, Integer> serializedObjects = new HashMap<>(2000);
+        private static Set<Class<?>> primitiveWrapperTypes = new HashSet<Class<?>>();
 
         public SkipExceptionsSerializer(JsonSerializer<Object> defaultSerializer) {
             super(Object.class);
             this.defaultSerializer = defaultSerializer;
+            loadPrimitiveTypes();
+        }
+
+        public static boolean isWrapperType(Class<?> clazz) {
+            return primitiveWrapperTypes.contains(clazz);
+        }
+
+        public void loadPrimitiveTypes() {
+            // From https://stackoverflow.com/questions/709961/determining-if-an-object-is-of-primitive-type
+            primitiveWrapperTypes.add(Boolean.class);
+            primitiveWrapperTypes.add(Character.class);
+            primitiveWrapperTypes.add(Byte.class);
+            primitiveWrapperTypes.add(Short.class);
+            primitiveWrapperTypes.add(Integer.class);
+            primitiveWrapperTypes.add(Long.class);
+            primitiveWrapperTypes.add(Float.class);
+            primitiveWrapperTypes.add(Double.class);
+            primitiveWrapperTypes.add(Void.class);
+
+        }
+
+        // from http://tutorials.jenkov.com/java-reflection/getters-setters.html:
+        public static boolean isGetter(Method method) {
+            if (!method.getName().startsWith("get")) return false;
+            if (method.getParameterTypes().length != 0) return false;
+            if (void.class.equals(method.getReturnType())) return false;
+            return true;
+        }
+
+        // return true if this is an 'is' method - 'isOnline', 'isVisible', etc
+        public static boolean isIser(Method method) {
+            if (!method.getName().startsWith("is")) return false;
+            if (method.getParameterTypes().length != 0) return false;
+            if (!boolean.class.equals(method.getReturnType())) return false;
+            return true;
         }
 
         @Override
         public void serialize(Object value, JsonGenerator jgen, SerializerProvider provider)
                 throws IOException {
             try {
-                if (value instanceof Block) {
-                    try {
-                        Block b = (Block) value;
-                        System.out.println(b.name);
-                        b.getGeneratedIcons(); // see if this causes an exception
-                    } catch (Exception e) {
-                        System.out.println("getGeneratedIcons() caused an exception.\n\t" + value + "\n\t" + e.getMessage());
-                        System.out.println();
-                        serializeX(value, jgen, provider);
-                        return;
-                    }
+                // primitive types are always serialized directly
+                Class fieldType = value.getClass();
+                if (isWrapperType(fieldType)) {
+                    if( fieldType == Boolean.class)
+                        jgen.writeBoolean((Boolean)value);
+                    else if( fieldType == Byte.class)
+                        jgen.writeNumber((Byte)value);
+                    else if( fieldType == Short.class)
+                        jgen.writeNumber((Short)value);
+                    else if( fieldType == Integer.class)
+                        jgen.writeNumber((Integer)value);
+                    else if( fieldType == Long.class)
+                        jgen.writeNumber((Long)value);
+                    else if( fieldType == Float.class)
+                        jgen.writeNumber((Float)value);
+                    else if( fieldType == Double.class)
+                        jgen.writeNumber((Double)value);
+                    else // character or Void
+                        jgen.writeString(value.toString());
+                    return;
                 }
 
-                if (value instanceof Consumers) {
+                // If it's not a primitive then write it out as an object:
+                jgen.writeStartObject();
+                // Don't serialize the same object multiple times:
+                if (serializedObjects.containsKey(value)) {
+                    //jgen.writeStringField("prev_serialized", value.toString());
+                    jgen.writeNumberField("prev_serialized", 1);
+                    jgen.writeNumberField("serializer_object_id", serializedObjects.get(value));
+                    jgen.writeEndObject();
+                    jgen.flush();
+                    return;
+                }
+                serializedObjects.put(value, serialized_object_id++);
+
+                Class aClass = value.getClass();
+//            jgen.writeStringField("NOTE", aClass.getName() + ": Manual Serializer Invoked to avoid an exception");
+                int currentObjectsId = serializedObjects.get(value);
+                jgen.writeNumberField("serializer_object_id", currentObjectsId);
+                //jgen.writeStringField("object.tostring", value.toString());
+                jgen.flush();
+//            System.out.println("========= " + aClass.getName() + ": =========");
+
+                Boolean emptyObject = true;
+//            System.out.println("METHODS: ===========");
+//                Method[] methods = aClass.getMethods();
+//                // only look at the 'getter' methods:
+//                methods = Arrays.stream(methods).filter( m -> (isGetter(m) || isIser(m)) && !Modifier.isNative(m.getModifiers()) && !Modifier.isStatic(m.getModifiers())).toArray(Method[]::new);
+//                for (Method method : methods) {
+//                    try {
+//                        if (method.getName() == "getGeneratedIcons") {
+//                            System.out.println("\tSKIPPING METHOD: " + method.getName());
+//                            continue;
+//                        } else if (isIser(method)) {
+//                            jgen.writeBooleanField(method.getName(), (boolean)method.invoke(value));
+//                            jgen.flush();
+//                        } else if (defaultSerializer != null) {
+//                            // provider.defaultSerializeValue(value, jgen);
+//                            System.out.println("\tMethod: " + method.getName());
+//                            jgen.writeFieldName(method.getName());
+//                            jgen.flush();
+//                            defaultSerializer.serialize(method.invoke(value), jgen, provider);
+//                            jgen.flush();
+//                            emptyObject = false;
+//                        }
+//                    } catch (Exception e) {
+//    //                    JsonStreamContext ctx = jgen.getOutputContext();
+//    //                    if( fieldStarted) {
+//    //                        jgen.writeNull();
+//    //                        //jgen.writeString("EXCEPTION WHEN SERIALIZED");
+//    //                    }
+//                        System.out.println("Failed to get value for method " + method.getName() + ":\n" + e.getMessage());
+//                        jgen.writeNullField(method.getName());
+//                        jgen.flush();
+//                    }
+//                }
+
+    //            System.out.println("FIELDS: ===========");
+                Field[] fields = aClass.getFields(); // public, private, protected - everything EXCEPT inherited
+                // remove static fields - we only want per-object fields:
+                fields = Arrays.stream(fields).filter(f -> !Modifier.isStatic(f.getModifiers()) ).toArray(Field[]::new);
+
+                for (Field f : fields) {
                     try {
-                        serializeConsumers((Consumers) value, jgen, provider);
+                        if (defaultSerializer != null) {
+    //                        System.out.println("\tname: " + f.getName() + " type: " + f.getType().getName() + " value:" + f.get(value));
+                            jgen.writeObjectField(f.getName(), f.get(value));
+                            jgen.flush();
+                            emptyObject = false;
+                        }
                     } catch (Exception e) {
-                        System.out.println("serializeConsumers: Skipping object b/c of exception.\n\t" + value + "\n\t" + e.getMessage());
-                        System.out.println();
-                        jgen.writeEndObject(); // end the problematic object (instead of writing out values, etc)
+                        System.out.println("Failed to get value for " + f.getName() + ":\n" + e.getMessage());
+                        jgen.writeNullField(f.getName());
                         jgen.flush();
                     }
-                } else if (defaultSerializer != null) {
-                    defaultSerializer.serialize(value, jgen, provider);
                 }
+                if( emptyObject) {
+                    jgen.writeStringField("empty_object", "no fields or get/is methods found");
+                    jgen.flush();
+                }
+
+                jgen.writeEndObject();
+
             } catch (Exception e) {
                 System.out.println("Skipping object b/c of exception.\n\t" + value.toString() + "\n\t" + e.getMessage());
                 System.out.println();
@@ -142,116 +261,7 @@ public class MindustrySerializer {
             }
         }
 
-        /*
-         * AFAICT, Mindustry expects people to check for what types are consumed before calling getItem, etc
-         * AND
-         * Jackson calls every method that starts with get____, and then chokes on Mindustry's exception
-         */
-        public void serializeConsumers(Consumers value, JsonGenerator jgen, SerializerProvider provider)
-                throws IOException {
-            jgen.writeStartObject();
 
-            jgen.writeStringField("NOTE", "Custom Serializer Created This");
-            if (!value.has(ConsumeType.item))
-                jgen.writeStringField("item", "None");
-            else {
-                jgen.writeObjectField("item", value.getItem());
-                jgen.writeObjectField("itemfilters", value.itemFilters);
-            }
-
-            if (!value.has(ConsumeType.power))
-                jgen.writeStringField("power", "None");
-            else
-                jgen.writeObjectField("power", value.getPower());
-
-            if (!value.has(ConsumeType.liquid))
-                jgen.writeStringField("liquid", "None");
-            else
-                // No getLiquid() method
-                jgen.writeObjectField("liquidfilters", value.liquidfilters);
-
-            jgen.writeEndObject();
-        }
-
-        public void serializeX(Object value, JsonGenerator jgen, SerializerProvider provider)
-                throws IOException {
-            jgen.writeStartObject();
-
-            // Don't serialize the same object multiple times:
-            if(serializedObjects.containsKey(value)  ) {
-                jgen.writeStringField("NOTE", " Duplicate object - already serialized this somewhere else (use serializer_object_id to get details)");
-                jgen.writeStringField(value.toString(), "serializer_object_id="+serializedObjects.get(value));
-                jgen.writeEndObject();
-                jgen.flush();
-                return;
-            }
-           serializedObjects.put(value, serialized_object_id++);
-
-            Class aClass = value.getClass();
-            jgen.writeStringField("NOTE", aClass.getName() + ": Manual Serializer Invoked to avoid an exception");
-            int currentObjectsId = serializedObjects.get(value);
-            jgen.writeNumberField("serializer_object_id", currentObjectsId);
-            jgen.flush();
-            System.out.println("========= " + aClass.getName() + ": =========");
-
-//            System.out.println("METHODS: ===========");
-//
-//            Method[] methods = aClass.getMethods();
-//            for (Method method : methods) {
-//                try {
-//                    if (method.getName() == "getGeneratedIcons") {
-//                        System.out.println("\tSKIPPING METHOD: " + method.getName());
-//                        continue;
-//                    } else if (defaultSerializer != null) {
-//                        // provider.defaultSerializeValue(value, jgen);
-//                        System.out.println("\tMethod: " + method.getName());
-////                        jgen.writeFieldName(f.getName());
-////                        fieldStarted = true;
-//                        jgen.flush();
-//                        //defaultSerializer.serialize(f.get(value), jgen, provider);
-//                        jgen.flush();
-//                    }
-//                } catch (Exception e) {
-//                    JsonStreamContext ctx = jgen.getOutputContext();
-////                    if( fieldStarted) {
-////                        jgen.writeNull();
-////                        //jgen.writeString("EXCEPTION WHEN SERIALIZED");
-////                    }
-//                    System.out.println("Failed to get value for method " + method.getName() + ":\n" + e.getMessage());
-//                    jgen.writeNullField(method.getName());
-//                    jgen.flush();
-//                }
-//            }
-
-            System.out.println("FIELDS: ===========");
-            Field[] fields = aClass.getFields();
-            for (Field f : fields) {
-                try {
-                    if (f.getName().equals("textureData")
-                            || f.getType().getName().equals("arc.graphics.g2d.TextureRegion")) {
-                        System.out.println("\tSKIPPING " + f.getName() + "(" + f.getType().getName() + "): " + f.get(value));
-                    } else if (defaultSerializer != null) {
-                        System.out.println("\tname: " + f.getName() + " type: " + f.getType().getName() + " value:" + f.get(value));
-                        jgen.writeObjectField(f.getName(), f.get(value));
-                        jgen.flush();
-                    }
-                } catch (Exception e) {
-                    System.out.println("Failed to get value for " + f.getName() + ":\n" + e.getMessage());
-                    jgen.writeNullField(f.getName());
-                    jgen.flush();
-                }
-            }
-
-            jgen.writeEndObject();
-        }
-
-//        // from http://tutorials.jenkov.com/java-reflection/getters-setters.html:
-//        public static boolean isGetter(Method method) {
-//            if (!method.getName().startsWith("get")) return false;
-//            if (method.getParameterTypes().length != 0) return false;
-//            if (void.class.equals(method.getReturnType())) return false;
-//            return true;
-//        }
 //
 //        public static boolean isSetter(Method method) {
 //            if (!method.getName().startsWith("set")) return false;
