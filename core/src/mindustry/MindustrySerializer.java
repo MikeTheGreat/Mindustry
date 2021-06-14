@@ -7,43 +7,21 @@ package mindustry;
 import arc.graphics.TextureData;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonGenerator;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.JsonStreamContext;
 import com.fasterxml.jackson.databind.*;
 import com.fasterxml.jackson.databind.module.SimpleModule;
 import com.fasterxml.jackson.databind.ser.BeanSerializerModifier;
 import com.fasterxml.jackson.databind.ser.std.StdSerializer;
 
-// XStream had the 'Illegal reflective access' issue too, just like GSON
-//import com.thoughtworks.xstream.XStream;
-//// import com.thoughtworks.xstream.io.json.JettisonMappedXmlDriver;
-//import com.thoughtworks.xstream.io.json.*;
-
-import mindustry.content.Blocks;
-import mindustry.content.TechTree;
-import mindustry.ctype.ContentType;
-import mindustry.type.Item;
 import mindustry.world.Block;
-import mindustry.world.blocks.defense.ForceProjector;
-import mindustry.world.blocks.defense.MendProjector;
-import mindustry.world.blocks.defense.OverdriveProjector;
-import mindustry.world.blocks.defense.ShockMine;
-import mindustry.world.blocks.distribution.Conveyor;
-import mindustry.world.blocks.power.LightBlock;
-import mindustry.world.blocks.production.Incinerator;
-import mindustry.world.blocks.production.Separator;
-import mindustry.world.blocks.sandbox.*;
-import mindustry.world.consumers.Consume;
-import mindustry.world.consumers.ConsumeItemFilter;
 import mindustry.world.consumers.ConsumeType;
 import mindustry.world.consumers.Consumers;
 
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.util.Arrays;
+import java.util.HashMap;
 
+@SuppressWarnings("ALL")
 public class MindustrySerializer {
 
     public static void serializeBlocks(String filename, Block[] blocksToSerialize) {
@@ -90,16 +68,12 @@ public class MindustrySerializer {
     static class NoopSerializer extends StdSerializer<Object> {
 
         public NoopSerializer() {
-            this(null);
-        }
-
-        public NoopSerializer(JsonSerializer<Object> defaultSerializer) {
             super(Object.class);
         }
 
         @Override
         public void serialize(Object value, JsonGenerator jgen, SerializerProvider provider)
-                throws IOException, JsonProcessingException {
+                throws IOException {
             System.out.println("No-op serializer for " + value.getClass().getName());
             jgen.writeString("MISSING"); // instead of writing out the image as the value
             // put in a string
@@ -118,14 +92,16 @@ public class MindustrySerializer {
         }
     }
 
+    static class GlobalVars {
+        public static int recursion_level = 0;
+    }
+
     // https://www.baeldung.com/jackson-call-default-serializer-from-custom-serializer
     static class SkipExceptionsSerializer extends StdSerializer<Object> {
 
         private JsonSerializer<Object> defaultSerializer;
 
-        public SkipExceptionsSerializer() {
-            this(null);
-        }
+        private HashMap<Object, Boolean> serializedObjects = new HashMap<>(2000);
 
         public SkipExceptionsSerializer(JsonSerializer<Object> defaultSerializer) {
             super(Object.class);
@@ -134,7 +110,7 @@ public class MindustrySerializer {
 
         @Override
         public void serialize(Object value, JsonGenerator jgen, SerializerProvider provider)
-                throws IOException, JsonProcessingException {
+                throws IOException {
             try {
                 if (value instanceof Block) {
                     try {
@@ -142,7 +118,7 @@ public class MindustrySerializer {
                         System.out.println(b.name);
                         b.getGeneratedIcons(); // see if this causes an exception
                     } catch (Exception e) {
-                        System.out.println("getGeneratedIcons() caused an exception.\n\t" + value.toString() + "\n\t" + e.getMessage());
+                        System.out.println("getGeneratedIcons() caused an exception.\n\t" + value + "\n\t" + e.getMessage());
                         System.out.println();
                         serializeX(value, jgen, provider);
                         return;
@@ -153,14 +129,19 @@ public class MindustrySerializer {
                     try {
                         serializeConsumers((Consumers) value, jgen, provider);
                     } catch (Exception e) {
-                        System.out.println("serializeConsumers: Skipping object b/c of exception.\n\t" + value.toString() + "\n\t" + e.getMessage());
+                        System.out.println("serializeConsumers: Skipping object b/c of exception.\n\t" + value + "\n\t" + e.getMessage());
                         System.out.println();
                         jgen.writeEndObject(); // end the problematic object (instead of writing out values, etc)
                         jgen.flush();
                     }
                 } else if (defaultSerializer != null) {
-                    // provider.defaultSerializeValue(value, jgen);
+                    GlobalVars.recursion_level++;
+                    if (GlobalVars.recursion_level > 10)
+                        return;
+
                     defaultSerializer.serialize(value, jgen, provider);
+
+                    GlobalVars.recursion_level--;
                 }
             } catch (Exception e) {
                 System.out.println("Skipping object b/c of exception.\n\t" + value.toString() + "\n\t" + e.getMessage());
@@ -176,7 +157,7 @@ public class MindustrySerializer {
          * Jackson calls every method that starts with get____, and then chokes on Mindustry's exception
          */
         public void serializeConsumers(Consumers value, JsonGenerator jgen, SerializerProvider provider)
-                throws IOException, JsonProcessingException {
+                throws IOException {
             jgen.writeStartObject();
 
             jgen.writeStringField("NOTE", "Custom Serializer Created This");
@@ -202,11 +183,20 @@ public class MindustrySerializer {
         }
 
         public void serializeX(Object value, JsonGenerator jgen, SerializerProvider provider)
-                throws IOException, JsonProcessingException {
+                throws IOException {
             jgen.writeStartObject();
 
+            // Don't serialize the same object multiple times:
+            if(serializedObjects.containsKey(value)  ) {
+                jgen.writeStringField(value.toString(), "Duplicate object - already serialized this somewhere else");
+                jgen.writeEndObject();
+                jgen.flush();
+                return;
+            }
+            serializedObjects.put(value, true);
+
             Class aClass = value.getClass();
-            jgen.writeStringField("NOTE", aClass.getName() + ": Placeholder Serializer Created This to avoid an exception");
+            jgen.writeStringField("NOTE", aClass.getName() + ": Manual Serializer Invoked to avoid an exception");
 
             System.out.println("========= " + aClass.getName() + ": =========");
 
@@ -242,10 +232,9 @@ public class MindustrySerializer {
             System.out.println("FIELDS: ===========");
             Field[] fields = aClass.getFields();
             for (Field f : fields) {
-                boolean fieldStarted = false;
                 try {
-                    if (f.getName() == "textureData"
-                            || f.getType().getName() == "arc.graphics.g2d.TextureRegion") {
+                    if (f.getName().equals("textureData")
+                            || f.getType().getName().equals("arc.graphics.g2d.TextureRegion")) {
                         System.out.println("\tSKIPPING " + f.getName() + "(" + f.getType().getName() + "): " + f.get(value));
                     } else if (defaultSerializer != null) {
                         System.out.println("\tname: " + f.getName() + " type: " + f.getType().getName() + " value:" + f.get(value));
@@ -262,22 +251,22 @@ public class MindustrySerializer {
             jgen.writeEndObject();
         }
 
-        // from http://tutorials.jenkov.com/java-reflection/getters-setters.html:
-        public static boolean isGetter(Method method) {
-            if (!method.getName().startsWith("get")) return false;
-            if (method.getParameterTypes().length != 0) return false;
-            if (void.class.equals(method.getReturnType())) return false;
-            return true;
-        }
-
-        public static boolean isSetter(Method method) {
-            if (!method.getName().startsWith("set")) return false;
-            if (method.getParameterTypes().length != 1) return false;
-            return true;
-        }
+//        // from http://tutorials.jenkov.com/java-reflection/getters-setters.html:
+//        public static boolean isGetter(Method method) {
+//            if (!method.getName().startsWith("get")) return false;
+//            if (method.getParameterTypes().length != 0) return false;
+//            if (void.class.equals(method.getReturnType())) return false;
+//            return true;
+//        }
+//
+//        public static boolean isSetter(Method method) {
+//            if (!method.getName().startsWith("set")) return false;
+//            if (method.getParameterTypes().length != 1) return false;
+//            return true;
+//        }
     }
 }
-    // Example of a block (silicon smelter):
+// Example of a block (silicon smelter):
     /*
     {
   "id" : 92,

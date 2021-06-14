@@ -1,41 +1,18 @@
 import arc.ApplicationCore;
-import arc.Core;
 import arc.backend.headless.HeadlessApplication;
-import arc.func.Cons;
-import arc.math.Rand;
-import arc.math.geom.Point2;
-import arc.struct.Seq;
 import arc.util.Log;
 import arc.util.Time;
-import arc.util.serialization.JsonReader;
-import arc.util.serialization.JsonValue.ValueType;
-import arc.util.serialization.Jval;
 import mindustry.MindustrySerializer;
 import mindustry.Vars;
-import mindustry.content.Blocks;
-import mindustry.content.Items;
-import mindustry.content.Liquids;
-import mindustry.content.UnitTypes;
 import mindustry.core.FileTree;
 import mindustry.core.GameState.State;
 import mindustry.core.Logic;
 import mindustry.core.NetServer;
 import mindustry.core.World;
 import mindustry.ctype.ContentType;
-import mindustry.entities.units.BuildPlan;
-import mindustry.game.Team;
-import mindustry.gen.Builderc;
-import mindustry.gen.Building;
-import mindustry.gen.Groups;
-import mindustry.gen.Unit;
-import mindustry.io.SaveIO;
 import mindustry.maps.Map;
 import mindustry.net.Net;
-import mindustry.type.Item;
 import mindustry.world.Block;
-import mindustry.world.Edges;
-import mindustry.world.Tile;
-import mindustry.world.Tiles;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -96,6 +73,7 @@ public class SerializeMindustryInfo_As_Tests {
                 if (exceptionThrown[0] != null) {
                     fail(exceptionThrown[0]);
                 }
+                //noinspection BusyWait
                 Thread.sleep(10);
             }
 
@@ -127,7 +105,11 @@ public class SerializeMindustryInfo_As_Tests {
         Block[] theBlocks = new Block[objArray.length];
         int i = 0;
         for (Object o : objArray) {
-            theBlocks[i++] = (Block) o;
+            Block b = (Block) o;
+
+            if( b.name.equals("air")
+                || b.name.equals("spawn"))
+                theBlocks[i++] = b;
         }
 
         MindustrySerializer.serializeBlocks("c:\\MikesStuff\\MindustryInfo.json", theBlocks);
